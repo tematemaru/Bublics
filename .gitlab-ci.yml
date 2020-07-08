@@ -1,0 +1,18 @@
+image: jessie-node10-ansible:latest
+
+stages:
+  - deploy
+
+before_script:
+  - 'which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )'
+  - eval $(ssh-agent -s)
+
+deploy:
+  stage: deploy
+  script:
+    - yarn
+    - yarn build:staging
+    - export ANSIBLE_HOST_KEY_CHECKING=False
+    - ansible-playbook -i ./inventory ./frontend_ssr_deploy.yml --extra-vars="project=sloy"
+  only:
+    - testing

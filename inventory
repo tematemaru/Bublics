@@ -1,0 +1,2 @@
+[ubuntu]
+aws-1 ansible_ssh_host=sloy-direct.snpdev.ru ansible_ssh_user=sloy

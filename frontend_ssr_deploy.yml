@@ -1,0 +1,63 @@
+#
+# Playbook for deploy simple SSR frontend project
+#
+# exra-vars:
+# project - project name
+# tarballs - tarballs count (old releases)
+
+- hosts: aws-1
+  user: "{{ project }}"
+
+  vars:
+    projectName: "{{ project }}"
+
+  tasks:
+    - name: Copy build to prod directory
+      synchronize:
+        src: ./
+        dest: /var/www/{{ projectName }}/cs/releases/{{ansible_date_time.date}}-{{ansible_date_time.hour}}{{ansible_date_time.minute}}{{ansible_date_time.second}}
+        rsync_opts:
+          - "--exclude=node_modules"
+          - "--exclude=.git"
+          - "--exclude=inventory.list"
+          - "--exclude=playbook"
+          - "--exclude=playbook.retry"
+          - "--exclude=.gitlab-ci.yml"
+
+    - name: Save last deployed release path
+      shell: basename $(readlink -f "/var/www/{{ projectName }}/cs/current")
+      register: lastReleaseName
+      
+    - debug: var=lastReleaseName
+
+    - name: Remove old symlink
+      command: rm -f /var/www/{{ projectName }}/cs/current
+
+    - name: Make symlink for new prod
+      command: ln -s /var/www/{{ projectName }}/cs/releases/{{ansible_date_time.date}}-{{ansible_date_time.hour}}{{ansible_date_time.minute}}{{ansible_date_time.second}} /var/www/{{ projectName }}/cs/current
+
+    # Archive old release version and save state    
+    - archive:
+        path: /var/www/{{ projectName }}/cs/releases/{{ lastReleaseName.stdout }}
+        dest: /var/www/{{ projectName }}/cs/releases/{{ lastReleaseName.stdout }}.tar.gz 
+      register: tarballCreatingState
+
+    - name: Clean old release path
+      file:
+        state: absent
+        path: "/var/www/{{ projectName }}/cs/releases/{{ lastReleaseName.stdout }}"
+      register: deleteResult
+      when: tarballCreatingState.failed == false
+
+    - name: Get count of exist backups
+      shell: ls /var/www/{{ projectName }}/cs/releases/*.tar.gz | wc -l
+      register: existBackupsCount
+
+    - name: Calculate count of backups to delete
+      shell: ls -trd -1 /var/www/{{ projectName }}/cs/releases/*.tar.gz | head -{{ backupCountForRemove }} | xargs rm
+      vars:
+        backupCountForRemove: "{{ existBackupsCount.stdout|int - 3 }}"
+      register: backupsForDelete
+      when: existBackupsCount.stdout|int > 3
+      
+    - debug: var=backupsForDelete
